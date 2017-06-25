@@ -1,0 +1,26 @@
+{
+  "name": "ngraph.ergm",
+  "version": "0.0.1",
+  "description": "Exponential random graph models",
+  "main": "index.js",
+  "keywords": [
+    "ngraph",
+    "graph",
+    "ergm",
+    "exponential",
+    "random"
+  ],
+  "author": "Michail Tsikerdekis",
+  "license": "BSD-3-Clause",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tsikerdekis/ngraph.ergm"
+  },
+  "devDependencies": {
+    "ngraph.graph": "0.0.12",
+    "ngraph.generators": "0.0.16"
+  },
+  "dependencies": {
+
+  }
+}

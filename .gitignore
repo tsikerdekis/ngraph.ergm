@@ -1,0 +1,6 @@
+ngraph.workspace
+.tern-port
+.tern-project
+node_modules/*
+.codelite/*
+
