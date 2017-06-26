@@ -18,7 +18,8 @@
   },
   "devDependencies": {
     "ngraph.graph": "0.0.12",
-    "ngraph.generators": "0.0.16"
+    "ngraph.generators": "0.0.16",
+    "gaussian": "1.1.0"
   },
   "dependencies": {
 
