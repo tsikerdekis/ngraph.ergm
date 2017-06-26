@@ -21,11 +21,11 @@ console.log(ergm(G));
  * @return {Array} (best_edge_coeff, best_triangle_coeff, best_p)
  * @return {Two-Dimensional Array} (edge_coeffs, triangle_coeffs, probs)
  */
-function ergm(G, coeffSamples = 10, graphSamples = 10, returnAll = false) {
+function ergm(G, coeffSamples = 100, graphSamples = 1000, returnAll = false) {
     // Init
     var edgeCoeffs = [0];
     var triangleCoeffs = [0];
-    var probs = new Array();
+    var probs = [0];
  
     while (probs.length < coeffSamples) {
         // Larger variance early on, smaller later on. It helps if our initial choices land far away from the actual distribution coefficients
@@ -33,35 +33,37 @@ function ergm(G, coeffSamples = 10, graphSamples = 10, returnAll = false) {
         var s = Math.sqrt( w / probs.length );
 
         // Sample based on previous coefficient and a random gaussian pick
-        var edgeCoeff = edgeCoeffs[-1] + gaussian(0, s).ppf(Math.random());
-        var triangleCoeff = triangleCoeffs[-1] + gaussian(0, s).ppf(Math.random());
+        var edgeCoeff = edgeCoeffs[edgeCoeffs.length-1] + gaussian(0, s).ppf(Math.random());
+        var triangleCoeff = triangleCoeffs[triangleCoeffs.length-1] + gaussian(0, s).ppf(Math.random());
         
+        console.log([edgeCoeff,triangleCoeff]);
         // Check how likely the observed graph is under this distribution:
         var graphList = mcmc(G, edgeCoeff, triangleCoeff, graphSamples);
         var sumWeight = sumWeights(graphList, edgeCoeff, triangleCoeff);
         var p = computeWeight(G, edgeCoeff, triangleCoeff) / sumWeight;
         
         // Decide whether to accept the new coefficients
-        if (p > probs[-1] || Math.random() < (p / probs[-1])) {
+        if (p > probs[probs.length-1] || Math.random() < (p / probs[probs.length-1])) {
             edgeCoeffs.push(edgeCoeff);
             triangleCoeffs.push(triangleCoeff);
             probs.push(p);
         } else {
-            edgeCoeffs.push(edgeCoeffs[-1]);
-            triangleCoeffs.push(triangleCoeffs[-1]);
-            probs.push(probs[1]);
+            edgeCoeffs.push(edgeCoeffs[edgeCoeffs.length-1]);
+            triangleCoeffs.push(triangleCoeffs[triangleCoeffs.length-1]);
+            probs.push(probs[1]); //Why not set this to p? TODO: think about it.
         }
     }
     
     // Return either the best values, or all of them:
-    if (!returnAll) {
-        i = Math.max.apply(null, probs);
-        bestP = probs[i]
-        bestEdgeCoeff = edgeCoeffs[i]
-        bestTriangleCoeff = triangleCoeffs[i]
-        return (bestEdgeCoeff, bestTriangleCoeff, bestP)
+    if (returnAll == false) {
+        var i = Math.max.apply(null, probs);
+        i = probs.indexOf(i);
+        var bestP = probs[i];
+        var bestEdgeCoeff = edgeCoeffs[i];
+        var bestTriangleCoeff = triangleCoeffs[i];
+        return [bestEdgeCoeff, bestTriangleCoeff, bestP];
     } else {
-        return (edgeCoeffs, triangleCoeffs, probs)
+        return [edgeCoeffs, triangleCoeffs, probs];
     }
 }
 
@@ -88,10 +90,7 @@ function sumWeights(graphList, edge_coeff, tri_coeff){
  * @param {Number} samples
  * @return {Array ngraph.graph} graphList
  */
-function mcmc(G, edge_coeff, triangle_coeff, samples){
-    n = samples
-    v = nodeCount
-    
+function mcmc(G, edge_coeff, triangle_coeff, samples){    
     var nodeCount = G.getNodesCount();
     var edgeCount = G.getLinksCount();
     
@@ -102,13 +101,13 @@ function mcmc(G, edge_coeff, triangle_coeff, samples){
     var currentGraph = require('ngraph.generators').wattsStrogatz(nodeCount, (nodeCount*p)-1, 0.02); // subtracting 1 in case p = 1
     var currentWeight = computeWeight(G, edge_coeff, triangle_coeff);
     
-    graphList = []
+    var graphList = []
     while (graphList.length < samples) {
-        var newGraph = permuteGraph(currentGraph)
-        var newWeight = computeWeight(newGraph, edge_coeff, triangle_coeff)
+        var newGraph = permuteGraph(currentGraph);
+        var newWeight = computeWeight(newGraph, edge_coeff, triangle_coeff);
         if (newWeight > currentWeight || Math.random() < (newWeight/currentWeight)) {
-            graphList.push(newGraph)
-            currentWeight = newWeight
+            graphList.push(newGraph);
+            currentWeight = newWeight;
         }
     }
     return graphList;
