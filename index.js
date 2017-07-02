@@ -1,16 +1,21 @@
 //TODO: flexible parameter selection and estimation instead of the fixed edge and triangle (two parameters)
+//TODO: problem: this is not deep copy: var G_prime = G; look for it in the code
 
 module.exports = ergm;
 
 var createGraph = require('ngraph.graph');
-var countTriangles = require('./lib/metrics.js');
+var metrics = require('./lib/metrics.js');
 var gaussian = require('gaussian');
 
 // For testing purposes
-var G = createGraph();
-var G = require('ngraph.generators').complete(4);
-
+//var G = createGraph();
+//var G = require('ngraph.generators').complete(4);
+var florentine = require('./datasets/florentine.js');
+var G = florentine();
+console.log(metrics.countTriangles(G));
+console.log(metrics.getNumberOfUndirectedEdges(G));
 console.log(ergm(G));
+
 
 /**
  * Use MCMC to sample possible coefficients, and return the best fits.
@@ -36,21 +41,23 @@ function ergm(G, coeffSamples = 100, graphSamples = 1000, returnAll = false) {
         var edgeCoeff = edgeCoeffs[edgeCoeffs.length-1] + gaussian(0, s).ppf(Math.random());
         var triangleCoeff = triangleCoeffs[triangleCoeffs.length-1] + gaussian(0, s).ppf(Math.random());
         
-        console.log([edgeCoeff,triangleCoeff]);
         // Check how likely the observed graph is under this distribution:
         var graphList = mcmc(G, edgeCoeff, triangleCoeff, graphSamples);
-        var sumWeight = sumWeights(graphList, edgeCoeff, triangleCoeff);
-        var p = computeWeight(G, edgeCoeff, triangleCoeff) / sumWeight;
+        if (graphList != null) {
+            var sumWeight = sumWeights(graphList, edgeCoeff, triangleCoeff);
+            var p = computeWeight(G, edgeCoeff, triangleCoeff) / sumWeight;
+            console.log(['#'+probs.length,edgeCoeff,triangleCoeff,computeWeight(G, edgeCoeff, triangleCoeff),sumWeight]);
         
-        // Decide whether to accept the new coefficients
-        if (p > probs[probs.length-1] || Math.random() < (p / probs[probs.length-1])) {
-            edgeCoeffs.push(edgeCoeff);
-            triangleCoeffs.push(triangleCoeff);
-            probs.push(p);
-        } else {
-            edgeCoeffs.push(edgeCoeffs[edgeCoeffs.length-1]);
-            triangleCoeffs.push(triangleCoeffs[triangleCoeffs.length-1]);
-            probs.push(probs[1]); //Why not set this to p? TODO: think about it.
+            // Decide whether to accept the new coefficients
+            if (p > probs[probs.length-1] || Math.random() < (p / probs[probs.length-1])) {
+                edgeCoeffs.push(edgeCoeff);
+                triangleCoeffs.push(triangleCoeff);
+                probs.push(p);
+            } else {
+                edgeCoeffs.push(edgeCoeffs[edgeCoeffs.length-1]);
+                triangleCoeffs.push(triangleCoeffs[triangleCoeffs.length-1]);
+                probs.push(probs[1]);
+            }
         }
     }
     
@@ -88,29 +95,42 @@ function sumWeights(graphList, edge_coeff, tri_coeff){
  * @param {Number} edge_coeff
  * @param {Number} tri_coeff
  * @param {Number} samples
+ * @param {Number} tolerance
  * @return {Array ngraph.graph} graphList
  */
-function mcmc(G, edge_coeff, triangle_coeff, samples){    
+function mcmc(G, edge_coeff, triangle_coeff, samples, tolerance = 10000){
+    if (tolerance <= samples) {
+        tolerance = samples + 100; // tolerance needs to always be above samples
+    }
+    
     var nodeCount = G.getNodesCount();
-    var edgeCount = G.getLinksCount();
+    var edgeCount = metrics.getNumberOfUndirectedEdges(G);
     
     // Probability of random edge existing (graph density)
     var p = 2 * Math.abs(edgeCount) / ( Math.abs(nodeCount) * ( Math.abs(nodeCount) - 1 )  );
     
     // Create a random graph from which the process of sampling will start
-    var currentGraph = require('ngraph.generators').wattsStrogatz(nodeCount, (nodeCount*p)-1, 0.02); // subtracting 1 in case p = 1
+    var currentGraph = cloneNgraph(G);
     var currentWeight = computeWeight(G, edge_coeff, triangle_coeff);
     
     var graphList = []
-    while (graphList.length < samples) {
+    var trials = 0;
+    while (graphList.length < samples && trials < tolerance) {
         var newGraph = permuteGraph(currentGraph);
         var newWeight = computeWeight(newGraph, edge_coeff, triangle_coeff);
-        if (newWeight > currentWeight || Math.random() < (newWeight/currentWeight)) {
+        if (newWeight >= currentWeight || Math.random() < (newWeight/currentWeight)) {
             graphList.push(newGraph);
             currentWeight = newWeight;
         }
+        trials += 1;
     }
-    return graphList;
+    if (trials >= tolerance) {
+        console.log("Specified model did not converge.");
+        return null;
+    } else {
+        return graphList;
+    }
+    
 }
 
 /**
@@ -121,9 +141,9 @@ function mcmc(G, edge_coeff, triangle_coeff, samples){
  * @return {Number} numberOfTriangles
  */
 function computeWeight(G, edge_coeff, tri_coeff) {
-    var edge_count = G.getLinksCount();
-    var triangles = countTriangles(G);
-    return Math.exp(edge_count * edge_coeff + triangles * tri_coeff)
+    var edge_count = metrics.getNumberOfUndirectedEdges(G);
+    var triangles = metrics.countTriangles(G);
+    return Math.exp((edge_count * edge_coeff) + (triangles * tri_coeff));
 }
 
 /**
@@ -133,26 +153,62 @@ function computeWeight(G, edge_coeff, tri_coeff) {
  */
 function permuteGraph(G) {
     var edge_list = new Array();
-    var nodesCount = G.getNodesCount();
+    var nodes = [];
+    G.forEachNode(function(node){
+        nodes.push(node.id);
+    });
+    var nodesCount = nodes.length;
     
     // Create edge_list - a list with all possible edges
-    for (var i = 0; i < nodesCount; i++) {
-        for (var j = 0; j < nodesCount; j++) {
+    for (var i = 0; i < G.getNodesCount(); i++) {
+        for (var j = i; j < G.getNodesCount(); j++) {
             if (i != j) {
-                edge_list.push([i,j]);
+                edge_list.push([nodes[i],nodes[j]]);
             }
         }
     }
     
     var rand = edge_list[Math.floor(Math.random() * edge_list.length)];
-    var G_prime = G;
+    //var G_prime = Object.clone(G, true)
+    //console.log(Object.is(G_prime,G));
+    //var G_prime = G;
+    var G_prime = cloneNgraph(G);
     
-    if (G.getLink(rand[0],rand[1]) == null && G.getLink(rand[0],rand[1]) == null) {
+    if (G_prime.getLink(rand[0],rand[1]) == null && G_prime.getLink(rand[1],rand[0]) == null) {
         G_prime.addLink(rand[0],rand[1]);
     } else {
         G_prime.removeLink(G.getLink(rand[0],rand[1]));
         G_prime.removeLink(G.getLink(rand[1],rand[0]));
     }
+    //console.log([G_prime.getLinksCount(),G.getLinksCount()]);
+    
+    return G_prime;
+}
+
+/**
+ * Produce the mean of an array
+ * @param {Array} list
+ * @return {Number} mean
+ */
+function mean(list) {
+    var total = 0;
+    for (var i=0; i < list.length; i++) {
+        total += list[i];
+    }
+    return total / list.length;
+}
+
+/**
+ * Deep copies the graph
+ * @param {ngraph.graph} Graph
+ * @return {ngraph.graph} Graph
+ */
+function cloneNgraph(G) {
+    var G_prime = createGraph();
+    
+    G.forEachLink(function(link) {
+        G_prime.addLink(link.fromId,link.toId)
+    });
     
     return G_prime;
 }
