@@ -1,5 +1,4 @@
 //TODO: flexible parameter selection and estimation instead of the fixed edge and triangle (two parameters)
-//TODO: problem: this is not deep copy: var G_prime = G; look for it in the code
 
 module.exports = ergm;
 
@@ -14,7 +13,7 @@ var florentine = require('./datasets/florentine.js');
 var G = florentine();
 console.log(metrics.countTriangles(G));
 console.log(metrics.getNumberOfUndirectedEdges(G));
-console.log(ergm(G));
+console.log(ergm(G,500,5000));
 
 
 /**
@@ -26,7 +25,7 @@ console.log(ergm(G));
  * @return {Array} (best_edge_coeff, best_triangle_coeff, best_p)
  * @return {Two-Dimensional Array} (edge_coeffs, triangle_coeffs, probs)
  */
-function ergm(G, coeffSamples = 100, graphSamples = 1000, returnAll = false) {
+function ergm(G, coeffSamples = 100, graphSamples = 1000) {
     // Init
     var edgeCoeffs = [0];
     var triangleCoeffs = [0];
@@ -46,7 +45,7 @@ function ergm(G, coeffSamples = 100, graphSamples = 1000, returnAll = false) {
         if (graphList != null) {
             var sumWeight = sumWeights(graphList, edgeCoeff, triangleCoeff);
             var p = computeWeight(G, edgeCoeff, triangleCoeff) / sumWeight;
-            console.log(['#'+probs.length,edgeCoeff,triangleCoeff,computeWeight(G, edgeCoeff, triangleCoeff),sumWeight]);
+            console.log(['#'+probs.length,edgeCoeff,triangleCoeff,p]);
         
             // Decide whether to accept the new coefficients
             if (p > probs[probs.length-1] || Math.random() < (p / probs[probs.length-1])) {
@@ -61,17 +60,12 @@ function ergm(G, coeffSamples = 100, graphSamples = 1000, returnAll = false) {
         }
     }
     
-    // Return either the best values, or all of them:
-    if (returnAll == false) {
-        var i = Math.max.apply(null, probs);
-        i = probs.indexOf(i);
-        var bestP = probs[i];
-        var bestEdgeCoeff = edgeCoeffs[i];
-        var bestTriangleCoeff = triangleCoeffs[i];
-        return [bestEdgeCoeff, bestTriangleCoeff, bestP];
-    } else {
-        return [edgeCoeffs, triangleCoeffs, probs];
-    }
+    var i = Math.max.apply(null, probs);
+    i = probs.indexOf(i);
+    var bestP = probs[i];
+    var bestEdgeCoeff = edgeCoeffs[i];
+    var bestTriangleCoeff = triangleCoeffs[i];
+    return [bestEdgeCoeff, bestTriangleCoeff, bestP];
 }
 
 /**
@@ -116,11 +110,14 @@ function mcmc(G, edge_coeff, triangle_coeff, samples, tolerance = 10000){
     var graphList = []
     var trials = 0;
     while (graphList.length < samples && trials < tolerance) {
+        //console.log([currentGraph.getLinksCount(),G.getLinksCount()]);
         var newGraph = permuteGraph(currentGraph);
         var newWeight = computeWeight(newGraph, edge_coeff, triangle_coeff);
         if (newWeight >= currentWeight || Math.random() < (newWeight/currentWeight)) {
             graphList.push(newGraph);
             currentWeight = newWeight;
+            //currentGraph = cloneNgraph(newGraph);
+            currentGraph = newGraph;
         }
         trials += 1;
     }
@@ -208,6 +205,8 @@ function cloneNgraph(G) {
     
     G.forEachLink(function(link) {
         G_prime.addLink(link.fromId,link.toId)
+        //G_prime.addNode(link.fromId);
+        //G_prime.addNode(link.toId);
     });
     
     return G_prime;

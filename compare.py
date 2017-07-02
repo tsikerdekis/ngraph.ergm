@@ -127,7 +127,7 @@ def fit_ergm(G, coeff_samples=100, graph_samples=1000, return_all=False):
         return (edge_coeffs, triangle_coeffs, probs)
         
         
-edge_coeffs, triangle_coeffs, probs = fit_ergm(G, 10, 10, True)
+edge_coeffs, triangle_coeffs, probs = fit_ergm(G, 100, 1000, True)
 
 print edge_coeffs[-1], triangle_coeffs[-1], probs[-1]
 
